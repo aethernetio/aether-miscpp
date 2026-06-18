@@ -26,8 +26,9 @@ namespace ae {
 namespace format_internal {
 
 inline std::string FormatTimeWithOptions(std::string_view options,
-                                        auto tp_us) {
+                                         auto duration_us) {
   // Convert to sys_days for calendar decomposition
+  auto tp_us = std::chrono::system_clock::time_point{duration_us};
   auto sd = std::chrono::floor<std::chrono::days>(tp_us);
   auto ymd = std::chrono::year_month_day{sd};
   std::chrono::hh_mm_ss hms{tp_us - sd};
@@ -104,10 +105,9 @@ struct Formatter<std::chrono::time_point<C, D>> {
   template <typename TStream>
   void Format(std::chrono::time_point<C, D> const& value,
               FormatContext<TStream>& ctx) const {
-    auto tp_us =
-        std::chrono::time_point_cast<std::chrono::microseconds>(value);
-    auto result =
-        format_internal::FormatTimeWithOptions(ctx.options, tp_us);
+    auto tp_us = std::chrono::time_point_cast<std::chrono::microseconds>(value);
+    auto result = format_internal::FormatTimeWithOptions(
+        ctx.options, tp_us.time_since_epoch());
     ctx.out().write(result);
   }
 };
@@ -117,27 +117,17 @@ struct Formatter<std::chrono::duration<Rep, Per>> {
   template <typename TStream>
   void Format(std::chrono::duration<Rep, Per> const& value,
               FormatContext<TStream>& ctx) const {
-    auto options = ctx.options;
-    bool has_spec = false;
-    for (std::size_t i = 0; i < options.size(); ++i) {
-      if (options[i] == '%' && i + 1 < options.size()) {
-        has_spec = true;
-        break;
-      }
-    }
+    bool has_spec = !ctx.options.empty();
     if (!has_spec) {
-      auto count = std::chrono::duration_cast<
-                       std::chrono::duration<Rep, Per>>(value)
-                       .count();
-      auto result = std::string{options} + std::to_string(count);
-      ctx.out().write(result);
+      auto count =
+          std::chrono::duration_cast<std::chrono::duration<Rep, Per>>(value)
+              .count();
+      ctx.out().write(std::to_string(count));
     } else {
       auto us = std::chrono::duration_cast<std::chrono::microseconds>(value);
-      auto tp =
-          std::chrono::system_clock::time_point{
-              std::chrono::duration_cast<std::chrono::system_clock::duration>(
-                  us)};
-      auto result = format_internal::FormatTimeWithOptions(options, tp);
+      auto tp = std::chrono::system_clock::time_point{
+          std::chrono::duration_cast<std::chrono::system_clock::duration>(us)};
+      auto result = format_internal::FormatTimeWithOptions(ctx.options, tp);
       ctx.out().write(result);
     }
   }
