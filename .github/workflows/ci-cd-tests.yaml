@@ -1,0 +1,116 @@
+# This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if you just want a single platform.
+# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
+name: CMake
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+  #Allows you to start workflow manually from the actions tab in the interface github.com
+  workflow_dispatch:
+
+jobs:
+  #CMake buildss
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.config.shell }} {0}
+
+    strategy:
+      # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations. Consider changing this to true when your workflow is stable.
+      fail-fast: false
+
+      matrix:
+        config:
+          - {
+              name: "Windows MSVC x64",
+              os: windows-latest,
+              shell: "powershell",
+              generator: "Visual Studio 18 2026",
+              arch: "x64",
+              cc: "cl",
+              cxx: "cl",
+            }
+          - {
+              name: "Windows MSVC x86",
+              os: windows-latest,
+              shell: "powershell",
+              generator: "Visual Studio 18 2026",
+              arch: "Win32",
+              cc: "cl",
+              cxx: "cl",
+            }
+          - {
+              name: "Windows MinGW",
+              os: windows-latest,
+              shell: "msys2",
+              generator: "Ninja",
+              cc: "gcc",
+              cxx: "g++",
+            }
+          - {
+              name: "Ubuntu GCC",
+              os: ubuntu-latest,
+              shell: "bash",
+              generator: "Unix Makefiles",
+              cc: "gcc",
+              cxx: "g++",
+              jobs_count: 4,
+            }
+          - {
+              name: "macOS Clang",
+              os: macos-latest,
+              shell: "bash",
+              generator: "Unix Makefiles",
+              cc: "clang",
+              cxx: "clang++",
+              jobs_count: 4,
+            }
+
+    steps:
+      - name: Set Windows enviroment
+        if: ${{ (matrix.config.os == 'windows-latest' && matrix.config.cc == 'cl') }}
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set MinGW enviroment
+        if: ${{ (matrix.config.os == 'windows-latest' && matrix.config.cc == 'gcc') }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            git
+            base-devel
+          pacboy: >-
+            cmake:p
+            ninja:p
+            gcc:p
+          update: true
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+        # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
+        # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+      - name: Configure CMake
+        run: >
+          cmake -B build
+          -G "${{ matrix.config.generator }}"
+          -A "${{ matrix.config.arch }}"
+          -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }}
+          -DCMAKE_C_COMPILER=${{ matrix.config.cc }}
+          -DCMAKE_BUILD_TYPE=Release
+          -S ./
+
+      - name: Build
+        # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
+        run: cmake --build build --config Release --parallel ${{ matrix.config.jobs_count }}
+
+      - name: Test
+        # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: ctest --test-dir build --build-config Release --output-on-failure --parallel
