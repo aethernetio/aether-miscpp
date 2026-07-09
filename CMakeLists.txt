@@ -33,6 +33,8 @@ option(AE_INSTALL "Install aether-miscpp library" ${IS_ROOT_PROJECT} )
 add_library(${PROJECT_NAME} INTERFACE)
 add_library(aether::miscpp ALIAS ${PROJECT_NAME})
 
+target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_20)
+
 target_include_directories(${PROJECT_NAME} INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/src>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
