@@ -17,11 +17,13 @@
 #ifndef AETHER_MISCPP_FORMAT_FORMAT_H_
 #define AETHER_MISCPP_FORMAT_FORMAT_H_
 
+// User code should include only this header; formatter subheaders are
+// implementation/export details.
 // IWYU pragma: begin_exports
 #include "aether-miscpp/format/formatter.h"
 #include "aether-miscpp/format/format_impl.h"
-#include "aether-miscpp/format/format_time.h"
 #include "aether-miscpp/format/default_formatters.h"
+#include "aether-miscpp/format/format_time.h"
 // IWYU pragma: end_exports
 
 #endif  // AETHER_MISCPP_FORMAT_FORMAT_H_

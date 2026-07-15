@@ -17,218 +17,248 @@
 #ifndef AETHER_MISCPP_FORMAT_FORMAT_IMPL_H_
 #define AETHER_MISCPP_FORMAT_FORMAT_IMPL_H_
 
-#include <tuple>
 #include <array>
-#include <string>
-#include <cstdlib>
+#include <concepts>
+#include <cstddef>
+#include <memory>
 #include <ostream>
-#include <sstream>
-#include <algorithm>
+#include <string>
 #include <string_view>
 #include <type_traits>
-#include <cstdint>
-#include <limits>
+#include <utility>
 
 #include "aether-miscpp/format/formatter.h"
 
 namespace ae {
 namespace format_internal {
-template <typename T, typename Enable = void>
-struct IsStream : std::false_type {};
 
-template <typename T>
-struct IsStream<T, std::void_t<decltype(std::declval<T&>() << int{0})>>
-    : std::true_type {};
+struct StringWriter {
+  explicit StringWriter(std::string& out) noexcept : out_{&out} {}
+  void write(std::string_view str) { out_->append(str.data(), str.size()); }
+  void write(char ch) { out_->push_back(ch); }
+  std::string* out_;
+};
 
-template <typename TStream>
-struct FormatWriter;
-
-template <>
-struct FormatWriter<std::ostream> {
-  explicit FormatWriter(std::ostream& stream) : ostr{&stream} {}
-
-  void write(std::uint8_t const* data, std::size_t size) {
-    ostr->write(reinterpret_cast<char const*>(data),
-                static_cast<std::streamsize>(size));
-  }
-
+struct OStreamWriter {
+  explicit OStreamWriter(std::ostream& out) noexcept : out_{&out} {}
   void write(std::string_view str) {
-    ostr->write(str.data(), static_cast<std::streamsize>(str.size()));
+    out_->write(str.data(), static_cast<std::streamsize>(str.size()));
   }
-
-  auto& stream() const { return *ostr; }
-
-  std::ostream* ostr;
-};
-FormatWriter(std::ostream& stream) -> FormatWriter<std::ostream>;
-
-// list of args to format
-template <typename... T>
-struct FormatArgs {
-  constexpr explicit FormatArgs(T const&... args) : arguments{&args...} {}
-
-  template <std::size_t I, typename TFormatContext>
-  constexpr void Format(TFormatContext& ctx) {
-    using arg_type = std::decay_t<std::tuple_element_t<I, std::tuple<T...>>>;
-    auto const& arg = *std::get<I>(arguments);
-    Formatter<arg_type>{}.Format(arg, ctx);
-  }
-
-  std::tuple<T const*...> arguments;
+  void write(char ch) { out_->put(ch); }
+  std::ostream* out_;
 };
 
-struct FormatEntry {
-  constexpr std::string_view before_format() const {
-    if (entry_string.empty()) {
-      return {};
-    }
-    return entry_string.substr(0, before_format_size);
-  }
-  constexpr std::string_view options() const {
-    if (entry_string.empty()) {
-      return {};
-    }
-    return entry_string.substr(options_offset, options_size);
-  }
-
-  std::string_view entry_string;
-  std::uint16_t before_format_size;
-  std::uint16_t options_offset;
-  std::uint16_t options_size;
-  std::uint8_t index = std::numeric_limits<std::uint8_t>::max();
+struct FormatPart {
+  std::size_t offset{};
+  std::size_t size{};
+  bool placeholder{};
 };
 
 struct FormatScheme {
-  static constexpr std::size_t kCount = 10;
+  // Hard limit for parsed parts, including both placeholders and literal runs.
+  // The current layout supports the common maximum pattern of 10 placeholders
+  // interleaved with 11 literals. If parsing would exceed this 21-part limit,
+  // overflow is recorded; formatting then writes the original source followed
+  // by " OVERFLOW" and does not format any arguments.
+  static constexpr std::size_t kMaxFormatParts = 21;
 
-  constexpr FormatScheme(char const* format)
-      : FormatScheme{std::string_view{format}} {}
-
-  template <std::size_t Size>
-  constexpr FormatScheme(char const (&format)[Size])
-      : FormatScheme{std::string_view{format, Size}} {}
-
-  FormatScheme(std::string const& format)
-      : FormatScheme{std::string_view{format}} {}
-
-  constexpr FormatScheme(std::string_view format) {
-    std::uint8_t index = 0;
-
-    while (!format.empty()) {
-      auto format_begin = FormatBegin(format);
-      if (format_begin == std::string_view::npos) {
-        break;
-      }
-      auto format_end = format.find_first_of('}', format_begin);
-      if (format_end == std::string_view::npos) {
-        break;
-      }
-      auto index_end = format.find_first_of(':', format_begin);
-      if (index_end > format_end) {
-        index_end = format_begin;
-      }
-
-      format_entries[index] = FormatEntry{
-          format.substr(0, format_end + 1),
-          static_cast<std::uint16_t>(format_begin),
-          static_cast<std::uint16_t>(index_end + 1),
-          static_cast<std::uint16_t>(format_end - index_end - 1),
-          index,
-      };
-      index += 1;
-      format = format.substr(format_end + 1, format.size() - format_end - 1);
-    }
-    if (!format.empty()) {
-      format_entries[index] = FormatEntry{
-          format, static_cast<std::uint16_t>(format.size()), 0,
-          0,      std::numeric_limits<std::uint8_t>::max(),
-      };
-    }
+  template <std::size_t N>
+  // NOLINTNEXTLINE(*explicit-constructor*)
+  constexpr FormatScheme(char const (&format)[N]) noexcept
+      : FormatScheme{std::string_view{format, N ? N - 1 : 0}} {}
+  // NOLINTNEXTLINE(*explicit-constructor*)
+  constexpr FormatScheme(std::string_view format) noexcept : source{format} {
+    Parse();
   }
 
-  constexpr FormatScheme(FormatScheme const& format_string)
-      : FormatScheme{format_string.format_entries} {}
+  constexpr std::size_t reserve_hint() const noexcept { return source.size(); }
 
-  template <std::size_t Size>
-  constexpr explicit FormatScheme(std::array<FormatEntry, Size> const& fe_arr) {
-    std::copy_n(std::begin(fe_arr), std::min(kCount, Size),
-                std::begin(format_entries));
-  }
+  // Non-owning format source. Referenced characters must remain alive and
+  // unchanged while formatting.
+  std::string_view source;
+  std::array<FormatPart, kMaxFormatParts> parts{};
+  std::size_t part_count{};
+  bool overflow{};
 
-  static constexpr std::size_t FormatBegin(std::string_view const format) {
-    std::size_t format_begin{};
-    format_begin = format.find_first_of('{', format_begin);
-    if ((format_begin != std::string_view::npos) &&
-        (format_begin + 1) != format.size() &&
-        (format[format_begin + 1] == '{')) {  // escaped '{'
-      format_begin += 1;
+ private:
+  constexpr void AddPart(std::size_t offset, std::size_t size,
+                         bool placeholder) noexcept {
+    if (size == 0) {
+      return;
     }
-    return format_begin;
+    if (part_count == parts.size()) {
+      overflow = true;
+      return;
+    }
+    parts[part_count++] = FormatPart{offset, size, placeholder};
   }
 
-  std::array<FormatEntry, kCount> format_entries{};
+  constexpr void Parse() noexcept {
+    std::size_t literal_begin = 0;
+    std::size_t i = 0;
+    while (i < source.size()) {
+      auto const escaped_brace = i + 1 < source.size() &&
+                                 (source[i] == '{' || source[i] == '}') &&
+                                 source[i + 1] == source[i];
+      if (escaped_brace) {
+        AddPart(literal_begin, i - literal_begin, false);
+        AddPart(i, 1, false);
+        i += 2;
+        literal_begin = i;
+        continue;
+      }
+
+      if (source[i] == '{') {
+        auto close = i + 1;
+        while (close < source.size() && source[close] != '}') {
+          ++close;
+        }
+        if (close == source.size()) {
+          break;
+        }
+        AddPart(literal_begin, i - literal_begin, false);
+        AddPart(i, close - i + 1, true);
+        i = close + 1;
+        literal_begin = i;
+      } else {
+        ++i;
+      }
+    }
+    AddPart(literal_begin, source.size() - literal_begin, false);
+  }
 };
 
-template <std::size_t I>
-struct Index {
-  static constexpr auto value = I;
+template <typename T, typename Writer>
+concept HasFormatterFor =
+    requires(Formatter<std::decay_t<T>> formatter, T const& value,
+             FormatContext<Writer>& ctx) { formatter.Format(value, ctx); };
+
+template <typename Writer>
+concept WriterLike = requires(Writer& writer) {
+  writer.write(std::string_view{});
+  writer.write('a');
 };
 
-template <typename Func, std::size_t... Is>
-void DispatchImpl(std::size_t index, [[maybe_unused]] Func func,
-                  std::index_sequence<Is...> const& /* seq */) {
-  bool res = ((index == Is ? (func(Index<Is>{}), true) : false) || ...);
-  (void)(res);
+template <typename Writer, typename T>
+void FormatValue(Writer& writer, T const& value, std::string_view options) {
+  using U = std::decay_t<T>;
+  if constexpr (HasFormatterFor<U, Writer>) {
+    auto ctx = FormatContext<Writer>{writer, options};
+    Formatter<U>{}.Format(value, ctx);
+  } else {
+    static_assert(sizeof(U) == 0, "Unsupported type for ae::Format");
+  }
 }
 
-// Dispatch runtime index to compile time Index<I>
-template <std::size_t Size, typename Func>
-void Dispatch(std::size_t index, Func&& func) {
-  DispatchImpl(index, std::forward<Func>(func),
-               std::make_index_sequence<Size>{});
+template <typename Writer>
+struct FormatArg {
+  using FormatFn = void (*)(Writer&, void const*, std::string_view);
+  void const* value{};
+  FormatFn format{};
+};
+
+template <typename Writer, typename T>
+void FormatArgThunk(Writer& writer, void const* value,
+                    std::string_view options) {
+  FormatValue(writer, *static_cast<T const*>(value), options);
 }
 
-template <typename TStream, typename... T>
-void FormatToStream(TStream& out, FormatScheme const& format_scheme,
-                    FormatArgs<T...> args) {
-  for (auto const& fmt : format_scheme.format_entries) {
-    if (auto before = fmt.before_format(); !before.empty()) {
-      out.write(before);
-    }
-    if (fmt.index < sizeof...(T)) {
-      Dispatch<sizeof...(T)>(fmt.index, [&](auto index) {
-        auto ctx = FormatContext{out, fmt.options()};
-        args.template Format<decltype(index)::value>(ctx);
-      });
+template <typename Writer, typename T>
+FormatArg<Writer> MakeFormatArg(T const& value) {
+  return FormatArg<Writer>{
+      static_cast<void const*>(std::addressof(value)),
+      &FormatArgThunk<Writer, T>,
+  };
+}
+
+constexpr std::string_view PlaceholderOptions(
+    std::string_view placeholder) noexcept {
+  if ((placeholder.size() >= 3) && (placeholder[0] == '{') &&
+      (placeholder[1] == ':') && (placeholder.back() == '}')) {
+    return std::string_view{placeholder.data() + 2, placeholder.size() - 3};
+  }
+  return {};
+}
+
+template <typename Writer>
+void FormatToWriterErased(Writer& writer, FormatScheme const& scheme,
+                          FormatArg<Writer> const* args,
+                          std::size_t arg_count) {
+  if (scheme.overflow) {
+    writer.write(scheme.source);
+    writer.write(" OVERFLOW");
+    return;
+  }
+
+  std::size_t next_arg = 0;
+  for (std::size_t i = 0; i < scheme.part_count; ++i) {
+    auto const part = scheme.parts[i];
+    auto const text = scheme.source.substr(part.offset, part.size);
+    if (part.placeholder) {
+      auto const arg_index = next_arg;
+      auto const options = PlaceholderOptions(text);
+      if (next_arg < arg_count) {
+        ++next_arg;
+        args[arg_index].format(writer, args[arg_index].value, options);
+      } else {
+        writer.write(text);
+      }
+    } else {
+      writer.write(text);
     }
   }
+}
+
+template <typename Writer, typename... Args>
+void FormatToWriter(Writer& writer, FormatScheme const& scheme,
+                    Args&&... args) {
+  auto erased_args = std::array<FormatArg<Writer>, sizeof...(Args)>{
+      MakeFormatArg<Writer>(args)...,
+  };
+  FormatToWriterErased(writer, scheme, erased_args.data(), erased_args.size());
 }
 
 }  // namespace format_internal
 
-template <typename TStream, typename... Args>
-void Format(format_internal::FormatWriter<TStream>& out_writer,
-            format_internal::FormatScheme const& format, Args&&... args) {
-  format_internal::FormatToStream(
-      out_writer, format,
-      format_internal::FormatArgs<std::decay_t<Args>...>{args...});
-}
+using FormatScheme = format_internal::FormatScheme;
 
 template <typename TStream, typename... Args>
-std::enable_if_t<format_internal::IsStream<TStream>::value> Format(
-    TStream& stream, format_internal::FormatScheme const& format,
-    Args&&... args) {
-  auto format_writer = format_internal::FormatWriter{stream};
-  Format(format_writer, format, std::forward<Args>(args)...);
+  requires std::derived_from<std::remove_reference_t<TStream>, std::ostream>
+void FormatTo(TStream& stream, FormatScheme const& format, Args&&... args) {
+  auto writer = format_internal::OStreamWriter{stream};
+  format_internal::FormatToWriter(writer, format, std::forward<Args>(args)...);
+}
+
+template <format_internal::WriterLike Writer, typename... Args>
+void FormatTo(Writer& writer, FormatScheme const& format, Args&&... args) {
+  format_internal::FormatToWriter(writer, format, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
-std::string Format(format_internal::FormatScheme const& format,
-                   Args&&... args) {
-  auto stream = std::stringstream{};
-  Format(stream, format, std::forward<Args>(args)...);
-  return stream.str();
+void FormatTo(std::string& out, FormatScheme const& format, Args&&... args) {
+  // Precondition: format.source and formatted arguments must not reference
+  // storage owned by out. This includes string_view, char const*, containers,
+  // ranges, strings, or views into out. This overload may reserve/append to out
+  // before or while reading inputs, which can invalidate or overlap those
+  // reads. No runtime aliasing checks are performed.
+  out.reserve(out.size() + format.reserve_hint());
+  auto writer = format_internal::StringWriter{out};
+  format_internal::FormatToWriter(writer, format, std::forward<Args>(args)...);
 }
+
+template <typename TStream, typename... Args>
+  requires std::derived_from<std::remove_reference_t<TStream>, std::ostream>
+void Format(TStream& stream, FormatScheme const& format, Args&&... args) {
+  FormatTo(stream, format, std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+std::string Format(FormatScheme const& format, Args&&... args) {
+  std::string out;
+  FormatTo(out, format, std::forward<Args>(args)...);
+  return out;
+}
+
 }  // namespace ae
 
 #endif  // AETHER_MISCPP_FORMAT_FORMAT_IMPL_H_

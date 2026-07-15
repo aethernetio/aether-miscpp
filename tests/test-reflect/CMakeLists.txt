@@ -25,9 +25,7 @@ if(NOT CM_PLATFORM)
 
   add_executable(${PROJECT_NAME})
   target_sources(${PROJECT_NAME} PRIVATE  ${test_srcs})
-  # for aether
-  target_include_directories(${PROJECT_NAME} PRIVATE ${INLCUDE_DIR})
-  target_link_libraries(${PROJECT_NAME} PRIVATE unity)
+  target_link_libraries(${PROJECT_NAME} PRIVATE aether::miscpp unity)
 
   add_test(NAME ${PROJECT_NAME} COMMAND $<TARGET_FILE:${PROJECT_NAME}>)
 

@@ -17,157 +17,220 @@
 #ifndef AETHER_MISCPP_FORMAT_DEFAULT_FORMATTERS_H_
 #define AETHER_MISCPP_FORMAT_DEFAULT_FORMATTERS_H_
 
-#include <memory>
-#include <cassert>
+#include <array>
+#include <charconv>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <iostream>
-#include <charconv>
-#include <type_traits>
+#include <ranges>
+#include <string>
 #include <string_view>
+#include <system_error>
+#include <type_traits>
 
-#include "aether-miscpp/format/formatter.h"
-#include "aether-miscpp/meta/time_traits.h"
-#include "aether-miscpp/meta/container_traits.h"
 #include "aether-miscpp/format/format_impl.h"
+#include "aether-miscpp/format/formatter.h"
+#include "aether-miscpp/format/numeric_helpers.h"
 
 namespace ae {
-using format_internal::FormatEntry;
-using format_internal::FormatScheme;
-
-template <typename T, typename _ = void>
-struct IsStreamOutputSpecified : std::false_type {};
+namespace format_internal {
 
 template <typename T>
-struct IsStreamOutputSpecified<
-    T, std::void_t<decltype(std::declval<std::ostream&>()
-                            << std::declval<T const&>())>> : std::true_type {};
-
-template <typename T, typename _ = void>
-struct IstextSpecified : std::false_type {};
+using BareT = std::remove_cvref_t<T>;
 
 template <typename T>
-struct IstextSpecified<T,
-                       std::void_t<decltype(T::text(std::declval<T const&>()))>>
-    : std::true_type {};
+concept StringLike = std::same_as<BareT<T>, std::string> ||
+                     std::same_as<BareT<T>, std::string_view>;
 
-// for any with operator<< to std::ostream&
+template <typename T>
+concept HasValueType = requires { typename BareT<T>::value_type; };
+
+template <typename T>
+concept ContainerLike = !StringLike<T> && HasValueType<T> &&
+                        std::ranges::input_range<BareT<T> const&>;
+
+template <typename T>
+concept ByteBufferContainer =
+    ContainerLike<T> &&
+    std::same_as<typename BareT<T>::value_type, std::uint8_t>;
+
+template <typename Writer>
+void WriteUnsignedIntegral(Writer& writer, std::uint64_t value) {
+  WriteUnsigned(writer, value);
+}
+
+template <typename Writer>
+void WriteSignedIntegral(Writer& writer, std::int64_t value) {
+  if (value < 0) {
+    writer.write('-');
+    auto magnitude = std::uint64_t{0} - static_cast<std::uint64_t>(value);
+    WriteUnsignedIntegral(writer, magnitude);
+  } else {
+    WriteUnsignedIntegral(writer, static_cast<std::uint64_t>(value));
+  }
+}
+
+template <typename Writer, typename T>
+void WriteIntegral(Writer& writer, T value) {
+  if constexpr (std::is_signed_v<T>) {
+    WriteSignedIntegral(writer, static_cast<std::int64_t>(value));
+  } else {
+    WriteUnsignedIntegral(writer, static_cast<std::uint64_t>(value));
+  }
+}
+
+template <typename Writer, typename T>
+void WriteFloat(Writer& writer, T value) {
+  constexpr auto kFloatBufferSize = std::size_t{64};
+  auto buff = std::array<char, kFloatBufferSize>{};
+  auto [ptr, ec] = std::to_chars(buff.data(), buff.data() + buff.size(), value,
+                                 std::chars_format::general);
+  if (ec == std::errc{}) {
+    writer.write(std::string_view{buff.data(),
+                                  static_cast<std::size_t>(ptr - buff.data())});
+    return;
+  }
+  writer.write("{float error ");
+  WriteSignedIntegral(writer, static_cast<std::int64_t>(static_cast<int>(ec)));
+  writer.write('}');
+}
+
+}  // namespace format_internal
+
+template <>
+struct Formatter<std::nullptr_t> {
+  template <typename TStream>
+  void Format(std::nullptr_t, FormatContext<TStream>& ctx) const {
+    ctx.out().write("(null)");
+  }
+};
+
+template <>
+struct Formatter<std::string> {
+  template <typename TStream>
+  void Format(std::string const& value, FormatContext<TStream>& ctx) const {
+    ctx.out().write(value);
+  }
+};
+
+template <>
+struct Formatter<std::string_view> {
+  template <typename TStream>
+  void Format(std::string_view value, FormatContext<TStream>& ctx) const {
+    ctx.out().write(value);
+  }
+};
+
+template <>
+struct Formatter<char const*> {
+  template <typename TStream>
+  void Format(char const* value, FormatContext<TStream>& ctx) const {
+    ctx.out().write(value != nullptr ? std::string_view{value}
+                                     : std::string_view{"(null)"});
+  }
+};
+
+template <>
+struct Formatter<char*> : Formatter<char const*> {};
+
+template <>
+struct Formatter<char> {
+  template <typename TStream>
+  void Format(char value, FormatContext<TStream>& ctx) const {
+    ctx.out().write(value);
+  }
+};
+
+template <>
+struct Formatter<bool> {
+  template <typename TStream>
+  void Format(bool value, FormatContext<TStream>& ctx) const {
+    ctx.out().write(value ? "true" : "false");
+  }
+};
+
+template <typename T>
+struct Formatter<T, std::enable_if_t<std::is_enum_v<T>>> {
+  template <typename TStream>
+  void Format(T value, FormatContext<TStream>& ctx) const {
+    format_internal::WriteIntegral(
+        ctx.out(), static_cast<std::underlying_type_t<T>>(value));
+  }
+};
+
 template <typename T>
 struct Formatter<
-    T, std::enable_if_t<IsStreamOutputSpecified<T>::value &&
-                        !IstextSpecified<T>::value && !std::is_enum_v<T> &&
-                        !IsTimePoint<T>::value && !IsDuration<T>::value>> {
+    T, std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool> &&
+                        !std::is_same_v<T, char>>> {
   template <typename TStream>
-  void Format(T const& value, FormatContext<TStream>& ctx) const {
-    ctx.out().stream() << value;
+  void Format(T value, FormatContext<TStream>& ctx) const {
+    format_internal::WriteIntegral(ctx.out(), value);
   }
 };
 
-// for any with text method
 template <typename T>
-struct Formatter<T, std::enable_if_t<IstextSpecified<T>::value>> {
+struct Formatter<T, std::enable_if_t<std::is_floating_point_v<T>>> {
   template <typename TStream>
-  void Format(T const& value, FormatContext<TStream>& ctx) const {
-    ctx.out().write(T::text(value));
+  void Format(T value, FormatContext<TStream>& ctx) const {
+    format_internal::WriteFloat(ctx.out(), value);
   }
 };
 
-// for any enum
 template <typename T>
-struct Formatter<T, std::enable_if_t<std::is_enum_v<T>>>
-    : Formatter<std::uint64_t> {
+struct Formatter<std::optional<T>> {
   template <typename TStream>
-  void Format(T const& value, FormatContext<TStream>& ctx) const {
-    Formatter<std::uint64_t>::Format(static_cast<std::uint64_t>(value), ctx);
-  }
-};
-
-// that can be iterated
-template <typename T>
-struct Formatter<T, std::enable_if_t<!(IsString<std::decay_t<T>>::value ||
-                                       IsStringView<std::decay_t<T>>::value) &&
-                                     IsContainer<std::decay_t<T>>::value>> {
-  template <typename TStream>
-  void Format(T const& value, FormatContext<TStream>& ctx) const {
-    if constexpr (std::is_same_v<std::uint8_t,
-                                 std::decay_t<typename T::value_type>> ||
-                  std::is_same_v<std::int8_t,
-                                 std::decay_t<typename T::value_type>>) {
-      FormatBuffer(value, ctx);
-    } else {
-      FormatContainer(value, ctx);
-    }
-  }
-
-  template <typename TStream>
-  void FormatContainer(T const& value, FormatContext<TStream>& ctx) const {
-    auto format = FormatScheme{std::array{
-        FormatEntry{ctx.options, 0, 0,
-                    static_cast<std::uint16_t>(ctx.options.size()), 0},
-        FormatEntry{{", "}, 2, 0, 0, 1},
-    }};
-    auto format_last = FormatScheme{std::array{
-        FormatEntry{ctx.options, 0, 0,
-                    static_cast<std::uint16_t>(ctx.options.size()), 0},
-    }};
-
-    for (auto it = std::begin(value); it != std::end(value); ++it) {
-      if (std::next(it) == std::end(value)) {
-        ae::Format(ctx.out(), format_last, *it);
-      } else {
-        ae::Format(ctx.out(), format, *it);
-      }
-    }
-  }
-
-  template <typename TStream>
-  void FormatBuffer(T const& value, FormatContext<TStream>& ctx) const {
-    static_assert(sizeof(typename T::value_type) == 1,
-                  "Print buffer only for one byte size values");
-
-    constexpr std::size_t kLocalBuffSize = 128;
-    constexpr std::size_t kTwoMinCharValue = 0x10;
-    constexpr int kPrintBase = 16;
-    std::size_t v_size = 2;  // 2 chars on byte
-    std::size_t buff_size = v_size * value.size();
-
-    std::array<char, kLocalBuffSize> local_buff;
-    std::unique_ptr<char[]> alloc_buff;  // NOLINT(*avoid-c-arrays)
-
-    char* buff;  // NOLINT(*init-variables)
-    if (buff_size > local_buff.size()) {
-      alloc_buff =
-          std::make_unique<char[]>(buff_size);  // NOLINT(*avoid-c-arrays)
-      buff = alloc_buff.get();
-    } else {
-      buff = local_buff.data();
-    }
-    std::size_t wp = 0;
-    for (auto const& v : value) {
-      // convert value with leading 0
-      if (v < kTwoMinCharValue) {
-        *(buff + wp) = '0';
-        std::to_chars(buff + wp + 1, buff + wp + v_size, v, kPrintBase);
-      } else {
-        std::to_chars(buff + wp, buff + wp + v_size, v, kPrintBase);
-      }
-      wp += v_size;
-    }
-    ctx.out().stream().write(buff, static_cast<std::streamsize>(wp));
-  }
-};
-
-// for std::optional
-template <typename T>
-struct Formatter<std::optional<T>> : Formatter<T> {
-  template <typename TStream>
+    requires format_internal::HasFormatterFor<T, TStream>
   void Format(std::optional<T> const& value,
               FormatContext<TStream>& ctx) const {
     if (!value) {
-      static constexpr std::string_view null_str = "nullopt";
-      ctx.out().stream().write(null_str.data(), null_str.size());
+      ctx.out().write("nullopt");
     } else {
-      Formatter<T>::Format(value.value(), ctx);
+      format_internal::FormatValue(ctx.out(), *value, {});
+    }
+  }
+};
+
+template <typename T>
+struct Formatter<T, std::enable_if_t<format_internal::ByteBufferContainer<T>>> {
+  template <typename TStream>
+  void Format(T const& value, FormatContext<TStream>& ctx) const {
+    static constexpr auto kHex = std::string_view{"0123456789abcdef"};
+    static constexpr auto kHexNibbleMask = std::uint8_t{0x0f};
+    ctx.out().write("0x");
+    for (auto byte : value) {
+      auto const byte_value = static_cast<std::uint8_t>(byte);
+      auto buffer = std::array<char, 2>{
+          kHex[(byte_value >> 4) & kHexNibbleMask],  // NOLINT(*bounds*)
+          kHex[byte_value & kHexNibbleMask]};        // NOLINT(*bounds*)
+      ctx.out().write(std::string_view{buffer.data(), buffer.size()});
+    }
+  }
+};
+
+template <typename T>
+struct Formatter<T,
+                 std::enable_if_t<format_internal::ContainerLike<T> &&
+                                   !format_internal::ByteBufferContainer<T>>> {
+  template <typename TStream>
+    requires format_internal::HasFormatterFor<
+        std::ranges::range_reference_t<format_internal::BareT<T> const&>,
+        TStream>
+  void Format(T const& value, FormatContext<TStream>& ctx) const {
+    bool first = true;
+    for (auto const& item : value) {
+      if (!first) {
+        ctx.out().write(", ");
+      }
+      first = false;
+      if constexpr (format_internal::ContainerLike<decltype(item)> &&
+                    !format_internal::ByteBufferContainer<decltype(item)>) {
+        ctx.out().write('[');
+        format_internal::FormatValue(ctx.out(), item, {});
+        ctx.out().write(']');
+      } else {
+        format_internal::FormatValue(ctx.out(), item, {});
+      }
     }
   }
 };

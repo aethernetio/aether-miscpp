@@ -20,11 +20,13 @@
 #include <string_view>
 
 namespace ae {
-// Format context for each variable
-template <typename TStream>
+// Context passed to Formatter<T>::Format.  Custom formatters should write via
+// ctx.out().write(...).  ctx.options contains text from placeholders written as
+// {:...}; placeholders without ':' provide an empty options string.
+template <typename Writer>
 class FormatContext {
  public:
-  constexpr FormatContext(TStream& out, std::string_view opt_string)
+  constexpr FormatContext(Writer& out, std::string_view opt_string)
       : options{opt_string}, out_{&out} {}
 
   constexpr auto& out() { return *out_; }
@@ -32,13 +34,14 @@ class FormatContext {
   std::string_view options;
 
  private:
-  TStream* out_;
+  Writer* out_;
 };
 
+// To format a custom type, specialize ae::Formatter<MyType> and implement:
+//   template <typename Writer>
+//   void Format(MyType const&, ae::FormatContext<Writer>& ctx) const;
 template <typename T, typename Enable = void>
-struct Formatter {
-  // provide Format method for your type
-};
+struct Formatter {};
 
 }  // namespace ae
 
