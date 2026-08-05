@@ -14,22 +14,17 @@
  * limitations under the License.
  */
 
-#ifndef AETHER_MISCPP_REFLECT_TYPE_INDEX_H_
-#define AETHER_MISCPP_REFLECT_TYPE_INDEX_H_
+#ifndef AETHER_MISCPP_META_TYPE_INDEX_H_
+#define AETHER_MISCPP_META_TYPE_INDEX_H_
 
 #include <array>
 #include <cstddef>
-#include <utility>
 #include <string_view>
+#include <utility>
 
 #include "aether-miscpp/crc.h"
 
-namespace ae::reflect {
-/**
- * \brief Hold T's human readable name.
- * !This is not cross platform compatible, so use it for local or debugging
- * only
- */
+namespace ae {
 template <typename T>
 struct TypeNameHolder {
   template <std::size_t... Is>
@@ -37,7 +32,6 @@ struct TypeNameHolder {
                                   std::index_sequence<Is...>) {
     return std::array{str[Is]...};
   }
-
   static constexpr auto GetTypeNameArray() {
 #if defined __clang__
     constexpr std::string_view func_name = __PRETTY_FUNCTION__;
@@ -52,40 +46,29 @@ struct TypeNameHolder {
     constexpr std::string_view pre = "TypeNameHolder<";
     constexpr std::string_view post = ">::GetTypeNameArray(void)";
 #else
-    constexpr std::string_view func_name =
-        "compiler_not_supported" __FUNCTION__;
+    constexpr std::string_view func_name = "unsupported";
     constexpr std::string_view pre = "";
     constexpr std::string_view post = "";
 #endif
-
     constexpr auto begin = func_name.find(pre) + pre.size();
     constexpr auto end = func_name.rfind(post);
-
     static_assert(begin < end);
-
     return NameArray(func_name.substr(begin, end),
                      std::make_index_sequence<end - begin>());
   }
-
   static constexpr auto kNameArray = GetTypeNameArray();
 };
 
-/**
- * \brief Get human readable compile time type name
- */
 template <typename T>
 constexpr auto GetTypeName() {
   constexpr auto& value = TypeNameHolder<T>::kNameArray;
   return std::string_view{value.data(), value.size()};
 }
 
-/**
- * \brief Get a unique type index.
- */
 template <typename T>
 constexpr auto GetTypeIndex() {
   return crc32::from_string_view(GetTypeName<T>()).value;
 }
-}  // namespace ae::reflect
+}  // namespace ae
 
-#endif  // AETHER_MISCPP_REFLECT_TYPE_INDEX_H_
+#endif  // AETHER_MISCPP_META_TYPE_INDEX_H_

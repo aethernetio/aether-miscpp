@@ -14,25 +14,14 @@
  * limitations under the License.
  */
 
-#ifndef AETHER_MISCPP_REFLECT_OVERRIDE_FUNC_H_
-#define AETHER_MISCPP_REFLECT_OVERRIDE_FUNC_H_
+#ifndef AETHER_MISCPP_DOMAIN_VISITOR_DOMAIN_VISITOR_H_
+#define AETHER_MISCPP_DOMAIN_VISITOR_DOMAIN_VISITOR_H_
 
-#include <utility>
+// IWYU pragma: begin_exports
+#include "aether-miscpp/domain_visitor/details/container_node_visitor.h"
+#include "aether-miscpp/domain_visitor/details/domain_visitor_impl.h"
+#include "aether-miscpp/domain_visitor/details/ptr_like_node_visitor.h"
+#include "aether-miscpp/domain_visitor/details/reflect_node_visitor.h"
+// IWYU pragma: end_exports
 
-namespace ae::reflect {
-/**
- * \brief Functor overridable with many other functors.
- * Has a cumulative operator() of all Fs functors.
- */
-template <typename... Fs>
-struct OverrideFunc : Fs... {
-  explicit OverrideFunc(Fs... funcs) : Fs{std::forward<Fs>(funcs)}... {}
-
-  using Fs::operator()...;
-};
-template <typename... U>
-OverrideFunc(U&&...) -> OverrideFunc<U...>;
-
-}  // namespace ae::reflect
-
-#endif  // AETHER_MISCPP_REFLECT_OVERRIDE_FUNC_H_
+#endif

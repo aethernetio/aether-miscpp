@@ -19,12 +19,16 @@
 void setUp() {}
 void tearDown() {}
 
-extern int test_reflect();
-extern int test_domain_visitor();
+extern int test_ReflectMeta();
+extern int test_ReflectMirror();
+extern int test_ReflectReflection();
+extern int test_ReflectDefines();
 
 int main() {
   int res = 0;
-  res += test_reflect();
-  res += test_domain_visitor();
+  res += test_ReflectMeta();
+  res += test_ReflectMirror();
+  res += test_ReflectReflection();
+  res += test_ReflectDefines();
   return res;
 }

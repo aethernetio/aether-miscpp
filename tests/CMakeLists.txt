@@ -28,5 +28,6 @@ CPMAddPackage("https://github.com/ThrowTheSwitch/Unity.git#master")
 
 add_subdirectory(test-types)
 add_subdirectory(test-reflect)
+add_subdirectory(test-domain-visitor)
 add_subdirectory(test-meta)
 add_subdirectory(test-format)

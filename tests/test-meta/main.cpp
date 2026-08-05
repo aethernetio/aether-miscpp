@@ -24,6 +24,7 @@ extern int test_arg_at();
 extern int test_index_sequence();
 extern int test_as_type();
 extern int test_tag_invoke();
+extern int test_TypeIndex();
 
 int main() {
   int res{};
@@ -32,5 +33,6 @@ int main() {
   res += test_index_sequence();
   res += test_as_type();
   res += test_tag_invoke();
+  res += test_TypeIndex();
   return res;
 }

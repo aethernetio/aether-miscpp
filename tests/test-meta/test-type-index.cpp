@@ -14,18 +14,13 @@
  * limitations under the License.
  */
 
-/**
- * One header to include for DomainVisitor
- */
-#ifndef AETHER_MISCPP_REFLECT_DOMAIN_VISITOR_H_
-#define AETHER_MISCPP_REFLECT_DOMAIN_VISITOR_H_
+#include <unity.h>
 
-// IWYU pragma: begin_exports
-#include "aether-miscpp/reflect/override_func.h"
-#include "aether-miscpp/reflect/domain_visitor_impl.h"
-#include "aether-miscpp/reflect/reflect_node_visitor.h"
-#include "aether-miscpp/reflect/ptr_like_node_visitor.h"
-#include "aether-miscpp/reflect/container_node_visitor.h"
-// IWYU pragma: end_exports
+#include "aether-miscpp/meta/type_index.h"
 
-#endif  // AETHER_MISCPP_REFLECT_DOMAIN_VISITOR_H_
+int test_TypeIndex() {
+  UNITY_BEGIN();
+  TEST_ASSERT_NOT_EQUAL(0, ae::GetTypeName<int>().size());
+  TEST_ASSERT_EQUAL(ae::GetTypeIndex<int>(), ae::GetTypeIndex<int>());
+  return UNITY_END();
+}

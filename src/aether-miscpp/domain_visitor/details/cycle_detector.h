@@ -13,33 +13,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#ifndef AETHER_MISCPP_DOMAIN_VISITOR_DETAILS_CYCLE_DETECTOR_H_
+#define AETHER_MISCPP_DOMAIN_VISITOR_DETAILS_CYCLE_DETECTOR_H_
 
-#ifndef AETHER_MISCPP_REFLECT_CYCLE_DETECTOR_H_
-#define AETHER_MISCPP_REFLECT_CYCLE_DETECTOR_H_
-
-#include <set>
-#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <set>
 
 #include "aether-miscpp/crc.h"
-#include "aether-miscpp/reflect/type_index.h"
+#include "aether-miscpp/meta/type_index.h"
 
-namespace ae::reflect {
-
+namespace ae::domain_visitor {
 inline std::size_t GetIndexFromTypeIdAndAddress(void const* obj,
                                                 std::uint32_t type_index) {
-  std::array<std::uint8_t, sizeof(std::uintptr_t) + sizeof(type_index)> buffer;
-  // Concatenate the object's address and type index into one buffer
-  *reinterpret_cast<std::uintptr_t*>(buffer.data()) =
-      reinterpret_cast<std::uintptr_t>(obj);
-  *reinterpret_cast<std::uint32_t*>(buffer.data() + sizeof(std::uintptr_t)) =
-      type_index;
-  // get the crc32 hash of the buffer
-  return crc32::from_buffer(buffer.data(), buffer.size()).value;
+  std::uint8_t buffer[sizeof(std::uintptr_t) + sizeof(type_index)]{};
+  auto addr = reinterpret_cast<std::uintptr_t>(obj);
+  std::memcpy(buffer, &addr, sizeof(addr));
+  std::memcpy(buffer + sizeof(addr), &type_index, sizeof(type_index));
+  return crc32::from_buffer(buffer, sizeof(buffer)).value;
 }
 
-template <typename T, typename Enable = void>
+template <typename T, typename _ = void>
 struct ObjectIndex {
   static constexpr auto TypeIndex = GetTypeIndex<T>();
 
@@ -49,19 +44,12 @@ struct ObjectIndex {
 };
 
 struct CycleDetector {
-  /**
-   * \brief Add an object to the cycle detector. If the object is already in the
-   * cycle detector, return false. Otherwise, add the object and return true.
-   */
   template <typename T>
   bool Add(T const* ptr) {
-    auto entry = ObjectIndex<T>::GetIndex(ptr);
-    auto [it, ok] = visited_objects.insert(entry);
-    return ok;
+    return visited_objects.insert(ObjectIndex<T>::GetIndex(ptr)).second;
   }
 
   std::set<std::size_t> visited_objects;
 };
-}  // namespace ae::reflect
-
-#endif  // AETHER_MISCPP_REFLECT_CYCLE_DETECTOR_H_
+}  // namespace ae::domain_visitor
+#endif

@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
-#ifndef AETHER_MISCPP_REFLECT_REFLECT_H_
-#define AETHER_MISCPP_REFLECT_REFLECT_H_
+#include <unity.h>
 
-// IWYU pragma: begin_exports
-#include "aether-miscpp/reflect/details/defines.h"
-#include "aether-miscpp/reflect/details/meta.h"
-#include "aether-miscpp/reflect/details/mirror.h"
-#include "aether-miscpp/reflect/details/reflection.h"
-// IWYU pragma: end_exports
+void setUp() {}
+void tearDown() {}
 
-#endif  // AETHER_MISCPP_REFLECT_REFLECT_H_
+extern int test_DomainVisitor();
+
+int main() { return test_DomainVisitor(); }

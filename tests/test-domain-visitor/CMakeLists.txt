@@ -12,29 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required( VERSION 3.16 )
+cmake_minimum_required(VERSION 3.16)
+
+
 
 list(APPEND test_srcs
-   main.cpp
-   test-type-list.cpp
-   test-arg-at.cpp
-   test-index-sequence.cpp
-   test-as-type.cpp
-   test-tag-invoke.cpp
-   test-type-index.cpp
+  main.cpp
+  test-domain-visitor.cpp
 )
 
 if(NOT CM_PLATFORM)
-  project(test-meta LANGUAGES CXX)
+  project(test-domain-visitor LANGUAGES CXX)
 
   add_executable(${PROJECT_NAME})
-  target_sources(${PROJECT_NAME} PRIVATE ${test_srcs})
+  target_sources(${PROJECT_NAME} PRIVATE  ${test_srcs})
   target_link_libraries(${PROJECT_NAME} PRIVATE aether::miscpp unity)
+
+  add_test(NAME ${PROJECT_NAME} COMMAND $<TARGET_FILE:${PROJECT_NAME}>)
+
   if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(${PROJECT_NAME} PUBLIC /Zc:preprocessor)
   endif()
-
-  add_test(NAME ${PROJECT_NAME} COMMAND $<TARGET_FILE:${PROJECT_NAME}>)
 else()
   message(WARNING "Not implemented for ${CM_PLATFORM}")
 endif()

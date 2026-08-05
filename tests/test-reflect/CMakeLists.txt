@@ -16,8 +16,10 @@ cmake_minimum_required( VERSION 3.16 )
 
 list(APPEND test_srcs
     main.cpp
-    test-reflect.cpp
-    test-domain-visitor.cpp
+    test-reflect-meta.cpp
+    test-reflect-mirror.cpp
+    test-reflect-reflection.cpp
+    test-reflect-defines.cpp
 )
 
 if(NOT CM_PLATFORM)
@@ -35,5 +37,3 @@ if(NOT CM_PLATFORM)
 else()
   message(WARNING "Not implemented for ${CM_PLATFORM}")
 endif()
-
-# target_compile_options(${PROJECT_NAME} PRIVATE "-save-temps=obj")
