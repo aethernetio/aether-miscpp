@@ -17,11 +17,12 @@
 #ifndef AETHER_MISCPP_TYPES_RESULT_H_
 #define AETHER_MISCPP_TYPES_RESULT_H_
 
-#include <variant>
 #include <cassert>
-#include <utility>
+#include <concepts>
 #include <functional>
 #include <type_traits>
+#include <utility>
+#include <variant>
 
 namespace ae {
 template <typename T, typename E>
@@ -59,33 +60,50 @@ struct Error {
   [[no_unique_address]] E error;
 };
 
+template <typename E>
+struct Error<E&> {
+  explicit Error(E& v) : error{v} {}
+  [[no_unique_address]] E& error;
+};
+
 template <typename T, typename E>
 class Result {
+  template <typename U>
+  struct OkVal {
+    [[no_unique_address]] U v;
+  };
+  template <typename U>
+  struct ErrVal {
+    [[no_unique_address]] U v;
+  };
+
  public:
   using value_type = T;
   using error_type = E;
 
-  using store_value_type =
-      std::conditional_t<std::is_reference_v<T>,
-                         std::reference_wrapper<std::remove_reference_t<T>>, T>;
-  using store_error_type =
-      std::conditional_t<std::is_reference_v<E>,
-                         std::reference_wrapper<std::remove_reference_t<E>>, E>;
+  using store_value_type = OkVal<std::conditional_t<
+      std::is_reference_v<T>,
+      std::reference_wrapper<std::remove_reference_t<T>>, T>>;
+  using store_error_type = ErrVal<std::conditional_t<
+      std::is_reference_v<E>,
+      std::reference_wrapper<std::remove_reference_t<E>>, E>>;
 
   template <typename U>
     requires(std::is_same_v<T, U>)
-  explicit Result(U&& value) : storage_{std::forward<U>(value)} {}
+  explicit Result(U&& value)
+      : storage_{store_value_type{std::forward<U>(value)}} {}
 
   template <typename EU>
     requires(std::is_same_v<E, EU>)
-  explicit Result(EU&& error) : storage_{std::forward<EU>(error)} {}
+  explicit Result(EU&& error)
+      : storage_{store_error_type{std::forward<EU>(error)}} {}
 
   // made implicit intentionally
   constexpr Result(Ok<T>&& ok)  // NOLINT(*explicit-constructor)
-      : storage_{std::move(ok).value} {}
+      : storage_{store_value_type{std::move(ok).value}} {}
   // made implicit intentionally
   constexpr Result(Error<E>&& error)  // NOLINT(*explicit-constructor)
-      : storage_{std::move(error).error} {}
+      : storage_{store_error_type{std::move(error).error}} {}
 
   constexpr bool IsOk() const noexcept { return storage_.index() == 0; }
   constexpr bool IsErr() const noexcept { return storage_.index() == 1; }
@@ -95,34 +113,35 @@ class Result {
 
   auto& value() & noexcept {
     assert(IsOk());
-    return static_cast<value_type&>(*get_value());
+    return static_cast<value_type&>(get_value()->v);
   }
   auto const& value() const& noexcept {
     assert(IsOk());
-    return static_cast<value_type const&>(*get_value());
+    return static_cast<value_type const&>(get_value()->v);
   }
   auto&& value() && noexcept {
     assert(IsOk());
-    return std::move(static_cast<value_type&>(*get_value()));
+    return std::move(static_cast<value_type&>(get_value()->v));
   }
 
   auto& error() & noexcept {
     assert(IsErr());
-    return static_cast<error_type&>(*get_error());
+    return static_cast<error_type&>(get_error()->v);
   }
   auto const& error() const& noexcept {
     assert(IsErr());
-    return static_cast<error_type const&>(*get_error());
+    return static_cast<error_type const&>(get_error()->v);
   }
   auto&& error() && noexcept {
     assert(IsErr());
-    return std::move(static_cast<error_type&>(*get_error()));
+    return std::move(static_cast<error_type&>(get_error()->v));
   }
 
   template <typename F, typename R = std::invoke_result_t<F, value_type&&>>
     requires(requires {
       // F must return result type
       { IsResultType_v<R> };
+      // result must be with same error_type
       { ResultType<R, typename R::value_type, error_type> };
     })
   auto Then(F&& f) && -> std::invoke_result_t<F, value_type&&> {
@@ -136,6 +155,7 @@ class Result {
     requires(requires {
       // F must return result type
       { IsResultType_v<R> };
+      // result must be with same error_type
       { ResultType<R, typename R::value_type, error_type> };
     })
   auto Then(F&& f) && -> std::invoke_result_t<F> {
@@ -149,6 +169,7 @@ class Result {
     requires(requires {
       // FE must return result type
       { IsResultType_v<R> };
+      // result must be with same value_type
       { ResultType<R, value_type, typename R::error_type> };
     })
   auto Else(FE&& f) && -> std::invoke_result_t<FE, error_type&&> {
@@ -162,6 +183,7 @@ class Result {
     requires(requires {
       // FE must return result type
       { IsResultType_v<R> };
+      // result must be with same value_type
       { ResultType<R, value_type, typename R::error_type> };
     })
   auto Else(FE&& f) && -> std::invoke_result_t<FE> {
@@ -193,11 +215,9 @@ class Result {
   }                                                         \
   auto VAR_NAME = _RES_##VAR_NAME.value()
 
-#define TRY_RESULT(...)                             \
-  {                                                 \
-    auto _RES_ = __VA_ARGS__;                       \
-    if (_RES_.IsErr()) {                            \
-      return ::ae::Error{std::move(_RES_).error()}; \
-    }                                               \
-  }
+#define TRY_RESULT(...)                                             \
+  if (auto _RES_ = __VA_ARGS__; _RES_.IsErr()) return ::ae::Error { \
+      std::move(_RES_).error()                                      \
+    }
+
 #endif  // AETHER_MISCPP_TYPES_RESULT_H_
