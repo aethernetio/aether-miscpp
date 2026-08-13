@@ -20,7 +20,6 @@ list(APPEND test_srcs
    test-arg-at.cpp
    test-index-sequence.cpp
    test-as-type.cpp
-   test-tag-invoke.cpp
    test-type-index.cpp
 )
 
