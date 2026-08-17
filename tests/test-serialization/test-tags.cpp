@@ -13,26 +13,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-#ifndef AETHER_MISCPP_REFLECT_OVERRIDE_FUNC_H_
-#define AETHER_MISCPP_REFLECT_OVERRIDE_FUNC_H_
-
+#include <cstddef>
 #include <utility>
 
-namespace ae::reflect {
-/**
- * \brief Functor overridable with many other functors.
- * Has a cumulative operator() of all Fs functors.
- */
-template <typename... Fs>
-struct OverrideFunc : Fs... {
-  explicit OverrideFunc(Fs... funcs) : Fs{std::forward<Fs>(funcs)}... {}
+#include "aether-miscpp/serialization/details/tags.h"
 
-  using Fs::operator()...;
-};
-template <typename... U>
-OverrideFunc(U&&...) -> OverrideFunc<U...>;
+using ae::seri::DataTag;
+using ae::seri::SizeTag;
 
-}  // namespace ae::reflect
-
-#endif  // AETHER_MISCPP_REFLECT_OVERRIDE_FUNC_H_
+namespace test_tags {
+// Validates SizeTag/DataTag construction for mutable, const, and raw buffers.
+void test_Tags() {
+  constexpr int kMutableValue = 7;
+  std::size_t s = 3;
+  auto st = SizeTag{s};
+  auto dw = DataTag{std::as_const(s)};
+  int v = kMutableValue;
+  auto dr = DataTag{v};
+  auto dv = DataTag{static_cast<void*>(nullptr), std::size_t{0}};
+  (void)st;
+  (void)dw;
+  (void)dr;
+  (void)dv;
+}
+}  // namespace test_tags

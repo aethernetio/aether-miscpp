@@ -18,7 +18,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/run)
-set(INLCUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/../src")
+set(INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/../src")
 
 include(../cmake/CPM.cmake)
 
@@ -28,5 +28,7 @@ CPMAddPackage("https://github.com/ThrowTheSwitch/Unity.git#master")
 
 add_subdirectory(test-types)
 add_subdirectory(test-reflect)
+add_subdirectory(test-domain-visitor)
 add_subdirectory(test-meta)
 add_subdirectory(test-format)
+add_subdirectory(test-serialization)

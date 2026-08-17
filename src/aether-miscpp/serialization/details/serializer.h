@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-/**
- * One header to include for DomainVisitor
- */
-#ifndef AETHER_MISCPP_REFLECT_DOMAIN_VISITOR_H_
-#define AETHER_MISCPP_REFLECT_DOMAIN_VISITOR_H_
+#ifndef AETHER_SERIALIZATION_DETAILS_SERIALIZER_H_
+#define AETHER_SERIALIZATION_DETAILS_SERIALIZER_H_
 
 // IWYU pragma: begin_exports
-#include "aether-miscpp/reflect/override_func.h"
-#include "aether-miscpp/reflect/domain_visitor_impl.h"
-#include "aether-miscpp/reflect/reflect_node_visitor.h"
-#include "aether-miscpp/reflect/ptr_like_node_visitor.h"
-#include "aether-miscpp/reflect/container_node_visitor.h"
+#include "aether-miscpp/serialization/details/meta.h"
+#include "aether-miscpp/serialization/details/serialization_result.h"
+#include "aether-miscpp/types/result.h"
 // IWYU pragma: end_exports
 
-#endif  // AETHER_MISCPP_REFLECT_DOMAIN_VISITOR_H_
+namespace ae::seri {
+template <typename Archive, typename T, typename = void>
+struct Serializer;
+}  // namespace ae::seri
+
+#endif

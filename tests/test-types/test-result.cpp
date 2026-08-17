@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <type_traits>
+
 #include <unity.h>
 
 #include "aether-miscpp/types/result.h"
@@ -30,6 +32,55 @@ void test_Result() {
 
   auto res_e = Result<G, E>{E{}};
   TEST_ASSERT_TRUE(res_e.IsErr());
+}
+
+void test_ResultOkReference() {
+  // Result<T&, E> stores Ok as a reference and exposes the original object.
+  int value = 7;
+
+  auto res = Result<int&, E>{Ok<int&>{value}};
+
+  static_assert(ae::ResultType<decltype(res), int&, E>);
+  static_assert(std::is_same_v<decltype(res.value()), int&>);
+
+  TEST_ASSERT_TRUE(res.IsOk());
+  TEST_ASSERT_EQUAL_PTR(&value, &res.value());
+
+  res.value() = 11;
+  TEST_ASSERT_EQUAL_INT(11, value);
+
+  value = 13;
+  TEST_ASSERT_EQUAL_INT(13, res.value());
+}
+
+void test_ResultErrorReference() {
+  // Result<T, E&> stores Error as a reference and exposes the original object.
+  int error = 17;
+
+  auto res = Result<G, int&>{Error<int&>{error}};
+
+  static_assert(ae::ResultType<decltype(res), G, int&>);
+  static_assert(std::is_same_v<decltype(res.error()), int&>);
+
+  TEST_ASSERT_TRUE(res.IsErr());
+  TEST_ASSERT_EQUAL_PTR(&error, &res.error());
+
+  res.error() = 23;
+  TEST_ASSERT_EQUAL_INT(23, error);
+
+  error = 29;
+  TEST_ASSERT_EQUAL_INT(29, res.error());
+}
+
+void test_ResultSameValueAndErrorTypes() {
+  // Same Ok/Error payload types are disambiguated by Ok<T> and Error<E> tags.
+  auto ok = Result<int, int>{Ok<int>{7}};
+  TEST_ASSERT_TRUE(ok.IsOk());
+  TEST_ASSERT_EQUAL_INT(7, ok.value());
+
+  auto err = Result<int, int>{Error<int>{13}};
+  TEST_ASSERT_TRUE(err.IsErr());
+  TEST_ASSERT_EQUAL_INT(13, err.error());
 }
 
 void test_Monadic() {
@@ -98,6 +149,9 @@ int test_result() {
   using namespace ae::test_result;  // NOLINT
 
   RUN_TEST(test_Result);
+  RUN_TEST(test_ResultOkReference);
+  RUN_TEST(test_ResultErrorReference);
+  RUN_TEST(test_ResultSameValueAndErrorTypes);
   RUN_TEST(test_Monadic);
   RUN_TEST(test_Macros);
 

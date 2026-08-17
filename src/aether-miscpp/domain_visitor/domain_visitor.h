@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-#ifndef AETHER_MISCPP_REFLECT_REFLECT_H_
-#define AETHER_MISCPP_REFLECT_REFLECT_H_
+#ifndef AETHER_MISCPP_DOMAIN_VISITOR_DOMAIN_VISITOR_H_
+#define AETHER_MISCPP_DOMAIN_VISITOR_DOMAIN_VISITOR_H_
 
 // IWYU pragma: begin_exports
-#include "aether-miscpp/reflect/details/defines.h"
-#include "aether-miscpp/reflect/details/meta.h"
-#include "aether-miscpp/reflect/details/mirror.h"
-#include "aether-miscpp/reflect/details/reflection.h"
+#include "aether-miscpp/domain_visitor/details/container_node_visitor.h"
+#include "aether-miscpp/domain_visitor/details/domain_visitor_impl.h"
+#include "aether-miscpp/domain_visitor/details/ptr_like_node_visitor.h"
+#include "aether-miscpp/domain_visitor/details/reflect_node_visitor.h"
 // IWYU pragma: end_exports
 
-#endif  // AETHER_MISCPP_REFLECT_REFLECT_H_
+#endif

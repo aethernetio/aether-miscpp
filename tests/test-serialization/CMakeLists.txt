@@ -12,24 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required( VERSION 3.16 )
+cmake_minimum_required(VERSION 3.16)
 
-list(APPEND test_srcs
-   main.cpp
-   test-type-list.cpp
-   test-arg-at.cpp
-   test-index-sequence.cpp
-   test-as-type.cpp
-   test-type-index.cpp
-)
+if (NOT CM_PLATFORM)
+  project(test-serialization LANGUAGES CXX)
 
-if(NOT CM_PLATFORM)
-  project(test-meta LANGUAGES CXX)
+  list(APPEND test_srcs
+       main.cpp
+       test-meta.cpp
+       test-tags.cpp
+       test-archive-facade.cpp
+       test-binary-archive.cpp
+       test-binary-std-serializers.cpp
+       test-binary-vector-buffer.cpp
+       test-reflectable-serializer.cpp
+       test-member-serializer.cpp
+       test-public-headers.cpp)
 
   add_executable(${PROJECT_NAME})
   target_sources(${PROJECT_NAME} PRIVATE ${test_srcs})
   target_link_libraries(${PROJECT_NAME} PRIVATE aether::miscpp unity)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  target_include_directories(${PROJECT_NAME} PRIVATE ${INCLUDE_DIR})
+
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(${PROJECT_NAME} PUBLIC /Zc:preprocessor)
   endif()
 

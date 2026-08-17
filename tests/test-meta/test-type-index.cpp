@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-#ifndef AETHER_MISCPP_REFLECT_REFLECT_H_
-#define AETHER_MISCPP_REFLECT_REFLECT_H_
+#include <unity.h>
 
-// IWYU pragma: begin_exports
-#include "aether-miscpp/reflect/details/defines.h"
-#include "aether-miscpp/reflect/details/meta.h"
-#include "aether-miscpp/reflect/details/mirror.h"
-#include "aether-miscpp/reflect/details/reflection.h"
-// IWYU pragma: end_exports
+#include "aether-miscpp/meta/type_index.h"
 
-#endif  // AETHER_MISCPP_REFLECT_REFLECT_H_
+int test_TypeIndex() {
+  UNITY_BEGIN();
+  TEST_ASSERT_NOT_EQUAL(0, ae::GetTypeName<int>().size());
+  TEST_ASSERT_EQUAL(ae::GetTypeIndex<int>(), ae::GetTypeIndex<int>());
+  return UNITY_END();
+}

@@ -14,14 +14,17 @@
  * limitations under the License.
  */
 
-#ifndef AETHER_MISCPP_REFLECT_REFLECT_H_
-#define AETHER_MISCPP_REFLECT_REFLECT_H_
+#ifndef AETHER_MISCPP_SERIALIZATION_BINARY_ARCHIVE_H_
+#define AETHER_MISCPP_SERIALIZATION_BINARY_ARCHIVE_H_
 
 // IWYU pragma: begin_exports
-#include "aether-miscpp/reflect/details/defines.h"
-#include "aether-miscpp/reflect/details/meta.h"
-#include "aether-miscpp/reflect/details/mirror.h"
-#include "aether-miscpp/reflect/details/reflection.h"
+// clang-format off
+#include "aether-miscpp/serialization/details/buffer_concept.h"
+#include "aether-miscpp/serialization/details/binary_archive.h"
+#include "aether-miscpp/serialization/details/binary_vector_buffer.h"
+#include "aether-miscpp/serialization/details/binary_std_serializers.h"
+#include "aether-miscpp/serialization/details/tags.h"
+// clang-format on
 // IWYU pragma: end_exports
 
-#endif  // AETHER_MISCPP_REFLECT_REFLECT_H_
+#endif  // AETHER_MISCPP_SERIALIZATION_BINARY_ARCHIVE_H_
