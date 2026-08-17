@@ -50,6 +50,13 @@ inline constexpr Good good{};
 }  // namespace ae::seri
 
 namespace ae {
+#ifdef _MSC_VER
+#  pragma warning(push)
+// warning C4702: unreachable code
+// this looks like false-positive on MSVCx86, so suppress it
+#  pragma warning(disable : 4702)
+#endif
+
 // minimal specialiazation for SeriResult
 template <>
 class Result<seri::Good, seri::SeriError> {
@@ -139,6 +146,11 @@ class Result<seri::Good, seri::SeriError> {
     seri::SeriError error_;
   };
 };
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
+
 }  // namespace ae
 
 namespace ae::seri {
