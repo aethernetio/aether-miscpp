@@ -57,11 +57,14 @@ class Result<seri::Good, seri::SeriError> {
   using value_type = seri::Good;
   using error_type = seri::SeriError;
 
-  // NOLINTNEXTLINE
-  constexpr Result(Ok<seri::Good>&&) noexcept : ok_{true} {}
-  // NOLINTNEXTLINE
+  // NOLINTNEXTLINE(*explicit*,*rvalue*)
+  constexpr Result(Ok<seri::Good>&& ok_val) noexcept : ok_{true} {
+    // explicitly discard value
+    (void)ok_val;
+  }
+  // NOLINTNEXTLINE(*explicit*)
   constexpr Result(Error<seri::SeriError>&& err) noexcept
-      : ok_{false}, error_{std::move(err.error)} {}
+      : ok_{false}, error_{std::move(err).error} {}
 
   // since SeriError is trivially destructible Result destructor is default
   static_assert(std::is_trivially_destructible_v<seri::SeriError>,
