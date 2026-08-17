@@ -77,13 +77,14 @@ class Reflection {
   decltype(auto) Apply(F&& func) noexcept {
     if constexpr (mirror_type::kSize == 0) {
       return std::invoke(std::forward<F>(func));
+    } else {
+      return mirror.Apply([&](auto const&... meta) -> decltype(auto) {
+        return std::invoke(
+            std::forward<F>(func),
+            meta.get(as_type<typename std::decay_t<decltype(meta)>::class_type>(
+                std::forward<class_type>(obj)))...);
+      });
     }
-    return mirror.Apply([&](auto const&... meta) -> decltype(auto) {
-      return std::invoke(
-          std::forward<F>(func),
-          meta.get(as_type<typename std::decay_t<decltype(meta)>::class_type>(
-              std::forward<class_type>(obj)))...);
-    });
   }
   template <typename F>
   decltype(auto) ApplyName(F&& func) noexcept {
@@ -98,11 +99,12 @@ class Reflection {
   decltype(auto) ApplyMeta(F&& func) noexcept {
     if constexpr (mirror_type::kSize == 0) {
       return std::invoke(std::forward<F>(func));
+    } else {
+      return mirror.Apply([&](auto const&... meta) -> decltype(auto) {
+        return std::invoke(std::forward<F>(func), std::forward<class_type>(obj),
+                           meta...);
+      });
     }
-    return mirror.Apply([&](auto const&... meta) -> decltype(auto) {
-      return std::invoke(std::forward<F>(func), std::forward<class_type>(obj),
-                         meta...);
-    });
   }
 };
 
@@ -119,7 +121,7 @@ struct MakeReflection {
   }
 };
 
-static constexpr auto make_reflection = MakeReflection{};
+static constexpr inline auto make_reflection = MakeReflection{};
 
 template <typename C>
 concept Reflectable = requires(C c) {
