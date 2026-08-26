@@ -15,6 +15,7 @@
  */
 #ifndef AETHER_MISCPP_DOMAIN_VISITOR_DETAILS_NODE_VISITOR_H_
 #define AETHER_MISCPP_DOMAIN_VISITOR_DETAILS_NODE_VISITOR_H_
+
 #include <functional>
 #include <type_traits>
 #include <utility>
@@ -61,9 +62,10 @@ bool CallVisitor(U&& obj, Visitor&& visitor) {
   if constexpr (std::is_invocable_v<Visitor, U>) {
     if constexpr (std::is_same_v<bool, std::invoke_result_t<Visitor, U>>) {
       return std::invoke(std::forward<Visitor>(visitor), std::forward<U>(obj));
+    } else {
+      std::invoke(std::forward<Visitor>(visitor), std::forward<U>(obj));
+      return true;
     }
-    std::invoke(std::forward<Visitor>(visitor), std::forward<U>(obj));
-    return true;
   } else {
     return true;
   }

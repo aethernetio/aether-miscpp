@@ -17,9 +17,9 @@
 #ifndef AETHER_MISCPP_MISC_DEFER_H_
 #define AETHER_MISCPP_MISC_DEFER_H_
 
-#include <utility>
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 namespace ae {
 /**
@@ -65,9 +65,11 @@ constexpr auto operator<<(MakeScopeExit, TCallable&& cb) {
 }
 }  // namespace ae
 
-#define ae_defer_at MakeScopeExit{} <<
 #define AEMSCPP_CONCAT_(a, b) a##b
 #define AEMSCPP_CONCAT(a, b) AEMSCPP_CONCAT_(a, b)
+
+#define ae_defer_at ::ae::MakeScopeExit{} <<
+
 #define ae_defer auto AEMSCPP_CONCAT(SCOPE_GUARD_, __LINE__) = ae_defer_at
 
 #endif  // AETHER_MISCPP_MISC_DEFER_H_
