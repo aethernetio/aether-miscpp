@@ -17,6 +17,7 @@ cmake_minimum_required( VERSION 3.16 )
 list(APPEND test_srcs
     main.cpp
     test-aligned-storage.cpp
+    test-method-ptr.cpp
     test-small-function.cpp
     test-result.cpp
 )

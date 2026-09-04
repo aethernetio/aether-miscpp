@@ -16,6 +16,7 @@
 
 #include <unity.h>
 
+#include <concepts>
 #include <vector>
 
 #include "aether-miscpp/types/small_function.h"
@@ -54,6 +55,20 @@ void test_CallALambdas() {
 
   f3(3);
   TEST_ASSERT_TRUE(f3_called);
+}
+
+// Verifies a const wrapper can invoke a mutable callable.
+void test_ConstWrapperCallsMutableCallable() {
+  auto invoke_count = 0;
+  const SmallFunction<void()> function{[count = 0, &invoke_count]() mutable {
+    count++;
+    invoke_count += count;
+  }};
+
+  function();
+  function();
+
+  TEST_ASSERT_EQUAL(3, invoke_count);
 }
 
 void test_FunctionsInVector() {
@@ -99,6 +114,31 @@ struct DestructableCallable {
   void operator()() const noexcept { invoke_count++; }
 
   bool moved = false;
+};
+
+struct ImplicitlyConvertibleResult {
+  operator int() const { return value; }  // NOLINT(*explicit*)
+
+  int value;
+};
+
+struct ExplicitlyConvertibleResult {
+  explicit operator int() const { return value; }
+
+  int value;
+};
+
+struct CallableReturningImplicitResult {
+  ImplicitlyConvertibleResult operator()(int value) const { return {value}; }
+};
+
+struct CallableReturningExplicitResult {
+  static inline int invoke_count;
+
+  ExplicitlyConvertibleResult operator()(int value) const {
+    invoke_count++;
+    return {value};
+  }
 };
 
 void test_DestructableCallable() {
@@ -150,6 +190,7 @@ class Worker {
  public:
   static inline int invoke_count;
   static inline int const_invoke_count;
+  static inline int result_invoke_count;
 
   explicit Worker(int expected) : expected(expected) {}
 
@@ -173,32 +214,61 @@ class Worker {
     TEST_ASSERT_EQUAL(expected, x);
   }
 
+  // Intentionally non-static to exercise pointers to member functions.
+  // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+  int Return(int x) const { return x; }
+
+  // Intentionally non-static to exercise MethodPtr member pointers.
+  // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+  ImplicitlyConvertibleResult ReturnImplicitResult(int x) const { return {x}; }
+
+  // Intentionally non-static to exercise MethodPtr member pointers.
+  // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+  ExplicitlyConvertibleResult ReturnExplicitResult(int x) const {
+    result_invoke_count++;
+    return {x};
+  }
+
   int expected;
 };
 
 void test_ClassMemberFunction() {
   using Func = SmallFunction<void(int x)>;
+  using Wrapper = MethodPtr<&Worker::Foo>;
+  constexpr int kTestValue = 12;
+  static_assert(std::constructible_from<Func, Wrapper&>);
+  static_assert(std::constructible_from<Func, Wrapper const&>);
   Worker::invoke_count = 0;
   Worker::const_invoke_count = 0;
 
-  auto worker = Worker{12};
-  auto f1 = Func{MethodPtr<&Worker::Foo>{&worker}};
+  auto worker = Worker{kTestValue};
+  auto wrapper = Wrapper{&worker};
+  auto const const_wrapper = Wrapper{&worker};
+  auto f1 = Func{wrapper};
   auto f2 = Func{MethodPtr<&Worker::FooConst>{&worker}};
-  f1(12);
-  f2(12);
-  TEST_ASSERT_EQUAL(1, Worker::invoke_count);
+  auto f3 = Func{const_wrapper};
+  f1(kTestValue);
+  f2(kTestValue);
+  f3(kTestValue);
+  TEST_ASSERT_EQUAL(2, Worker::invoke_count);
   TEST_ASSERT_EQUAL(1, Worker::const_invoke_count);
 
   auto f1_1 = std::move(f1);
   auto f2_1 = std::move(f2);
-  f1_1(12);
-  f2_1(12);
-  TEST_ASSERT_EQUAL(2, Worker::invoke_count);
+  f1_1(kTestValue);
+  f2_1(kTestValue);
+  TEST_ASSERT_EQUAL(3, Worker::invoke_count);
   TEST_ASSERT_EQUAL(2, Worker::const_invoke_count);
 }
 
 void test_ClassMemberFunctionRef() {
-  using Func = SmallFunction<void(int x)>;
+  using Func = SmallFunction<void(int const& x)>;
+  static_assert(std::constructible_from<SmallFunction<void(int)>,
+                                        MethodPtr<&Worker::FooRef>>);
+  static_assert(std::constructible_from<SmallFunction<int(short)>,
+                                        MethodPtr<&Worker::Return>>);
+  static_assert(std::constructible_from<SmallFunction<void(int)>,
+                                        MethodPtr<&Worker::Return>>);
   Worker::invoke_count = 0;
   Worker::const_invoke_count = 0;
 
@@ -216,6 +286,43 @@ void test_ClassMemberFunctionRef() {
   f2_1(12);
   TEST_ASSERT_EQUAL(2, Worker::invoke_count);
   TEST_ASSERT_EQUAL(2, Worker::const_invoke_count);
+}
+
+// Verifies generic callable and MethodPtr construction share implicit result
+// conversion behavior while void wrappers discard invocation results.
+void test_ReturnCompatibility() {
+  using IntFunction = SmallFunction<int(int)>;
+  using VoidFunction = SmallFunction<void(int)>;
+  using ImplicitMethod = MethodPtr<&Worker::ReturnImplicitResult>;
+  using ExplicitMethod = MethodPtr<&Worker::ReturnExplicitResult>;
+
+  static_assert(
+      std::constructible_from<IntFunction, CallableReturningImplicitResult>);
+  static_assert(
+      !std::constructible_from<IntFunction, CallableReturningExplicitResult>);
+  static_assert(std::constructible_from<IntFunction, ImplicitMethod>);
+  static_assert(!std::constructible_from<IntFunction, ExplicitMethod>);
+  static_assert(
+      std::constructible_from<VoidFunction, CallableReturningExplicitResult>);
+  static_assert(std::constructible_from<VoidFunction, ExplicitMethod>);
+
+  auto callable = IntFunction{CallableReturningImplicitResult{}};
+  TEST_ASSERT_EQUAL(12, callable(12));
+
+  auto worker = Worker{0};
+  auto method = IntFunction{ImplicitMethod{&worker}};
+  TEST_ASSERT_EQUAL(13, method(13));
+
+  CallableReturningExplicitResult::invoke_count = 0;
+  Worker::result_invoke_count = 0;
+  constexpr int kCallableArgument = 14;
+  constexpr int kMethodArgument = 15;
+  auto void_callable = VoidFunction{CallableReturningExplicitResult{}};
+  auto void_method = VoidFunction{ExplicitMethod{&worker}};
+  void_callable(kCallableArgument);
+  void_method(kMethodArgument);
+  TEST_ASSERT_EQUAL(1, CallableReturningExplicitResult::invoke_count);
+  TEST_ASSERT_EQUAL(1, Worker::result_invoke_count);
 }
 
 static inline int test_invoke_expected;
@@ -254,11 +361,13 @@ void test_FreeFunction() {
 int test_small_function() {
   UNITY_BEGIN();
   RUN_TEST(ae::test_small_function::test_CallALambdas);
+  RUN_TEST(ae::test_small_function::test_ConstWrapperCallsMutableCallable);
   RUN_TEST(ae::test_small_function::test_FunctionsInVector);
   RUN_TEST(ae::test_small_function::test_DestructableCallable);
   RUN_TEST(ae::test_small_function::test_DestructableCallableInVector);
   RUN_TEST(ae::test_small_function::test_ClassMemberFunction);
   RUN_TEST(ae::test_small_function::test_ClassMemberFunctionRef);
+  RUN_TEST(ae::test_small_function::test_ReturnCompatibility);
   RUN_TEST(ae::test_small_function::test_FreeFunction);
   return UNITY_END();
 }

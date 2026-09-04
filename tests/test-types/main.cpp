@@ -20,12 +20,14 @@ void setUp() {}
 void tearDown() {}
 
 extern int test_aligned_storage();
+extern int test_method_ptr();
 extern int test_small_function();
 extern int test_result();
 
 int main() {
   int res = 0;
   res += test_aligned_storage();
+  res += test_method_ptr();
   res += test_small_function();
   res += test_result();
   return res;
