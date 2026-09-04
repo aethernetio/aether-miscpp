@@ -17,13 +17,19 @@
 #ifndef AETHER_MISCPP_TYPES_SMALL_FUNCTION_H_
 #define AETHER_MISCPP_TYPES_SMALL_FUNCTION_H_
 
-#include <memory>
-#include <cstddef>
+#include <cassert>
 #include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <new>
 #include <type_traits>
+#include <utility>
 
-#include "aether-miscpp/types/aligned_storage.h"
 #include "aether-miscpp/meta/function_signature.h"
+#include "aether-miscpp/types/aligned_storage.h"
+#include "aether-miscpp/types/method_ptr.h"  // IWYU pragma: exports
 
 namespace ae {
 namespace small_function_internal {
@@ -44,25 +50,18 @@ struct Invoker {
   template <typename TCallable>
   static TRet InvokeCallable(void* self, TArgs&&... args) {
     if constexpr (std::is_void_v<TRet>) {
-      std::launder(static_cast<TCallable*>(self))
-          ->operator()(std::forward<TArgs>(args)...);
+      std::invoke(*std::launder(static_cast<TCallable*>(self)),
+                  std::forward<TArgs>(args)...);
     } else {
-      return std::launder(static_cast<TCallable*>(self))
-          ->operator()(std::forward<TArgs>(args)...);
+      return std::invoke(*std::launder(static_cast<TCallable*>(self)),
+                         std::forward<TArgs>(args)...);
     }
   }
 
-  // Invoke for member functions
-  template <typename T, auto Method>
-  static TRet InvokeMemberFunction(void* self, TArgs&&... args) {
-    auto* instance = reinterpret_cast<T*>(*static_cast<std::uintptr_t*>(self));
-    return (instance->*Method)(std::forward<TArgs>(args)...);
-  }
-
   // Invoke for free functions
+  template <typename TFunction>
   static TRet InvokeFreeFunction(void* self, TArgs&&... args) {
-    auto method = reinterpret_cast<TRet (*)(TArgs...)>(
-        *static_cast<std::uintptr_t*>(self));
+    auto method = *std::launder(static_cast<TFunction*>(self));
     return method(std::forward<TArgs>(args)...);
   }
 };
@@ -71,21 +70,14 @@ template <typename TCallable>
 static void Manage(void* a, void* b, Operation op) noexcept {
   switch (op) {
     case Operation::kMove: {
-      {
-        if constexpr (std::is_trivially_move_constructible_v<TCallable>) {
-          std::memcpy(b, a, sizeof(TCallable));
-        } else {
-          new (b)
-              TCallable{std::move(*std::launder(static_cast<TCallable*>(a)))};
-        }
-        break;
+      new (b) TCallable{std::move(*std::launder(static_cast<TCallable*>(a)))};
+      break;
+    }
+    case Operation::kDestroy: {
+      if constexpr (!std::is_trivially_destructible_v<TCallable>) {
+        std::destroy_at(std::launder(static_cast<TCallable*>(a)));
       }
-      case Operation::kDestroy: {
-        if constexpr (!std::is_trivially_destructible_v<TCallable>) {
-          std::destroy_at(std::launder(static_cast<TCallable*>(a)));
-        }
-        break;
-      }
+      break;
     }
   }
 }
@@ -96,37 +88,30 @@ static constexpr auto VTableForT = VTable<TRet, TArgs...>{
     Manage<TCallable>,
 };
 
-template <typename T, auto Method, typename TRet, typename... TArgs>
-static constexpr auto VTableForClassMember = VTable<TRet, TArgs...>{
-    Invoker<TRet, TArgs...>::template InvokeMemberFunction<T, Method>,
-    Manage<T*>,
-};
-
-template <typename TRet, typename... TArgs>
+template <typename TFunction, typename TRet, typename... TArgs>
 static constexpr auto VTableForFreeFunction = VTable<TRet, TArgs...>{
-    Invoker<TRet, TArgs...>::InvokeFreeFunction,
-    Manage<TRet (*)(TArgs...)>,
+    Invoker<TRet, TArgs...>::template InvokeFreeFunction<TFunction>,
+    Manage<TFunction>,
 };
+
+template <typename TCallable, typename TSource, typename TRet,
+          typename... TArgs>
+/**
+ * \brief Whether a callable can be stored and invoked by SmallFunction.
+ *
+ * For non-void results, the invocation result must be implicitly convertible
+ * to TRet; explicit-only conversions are rejected. Void results accept and
+ * discard any invocation result, including results requiring explicit
+ * conversion.
+ */
+concept CompatibleCallable =
+    std::constructible_from<TCallable, TSource> &&
+    std::is_nothrow_constructible_v<TCallable, TSource> &&
+    std::is_nothrow_move_constructible_v<TCallable> &&
+    std::invocable<TCallable&, TArgs&&...> &&
+    (std::is_void_v<TRet> ||
+     std::is_convertible_v<std::invoke_result_t<TCallable&, TArgs&&...>, TRet>);
 }  // namespace small_function_internal
-
-template <auto Method>
-struct MethodPtr;
-
-// class member function pointer
-template <typename T, typename TRet, typename... TArgs,
-          TRet (T::*Method)(TArgs...)>
-struct MethodPtr<Method> {
-  static constexpr auto kMethod = Method;
-  T* instance;
-};
-
-// class member function pointer const
-template <typename T, typename TRet, typename... TArgs,
-          TRet (T::*Method)(TArgs...) const>
-struct MethodPtr<Method> {
-  static constexpr auto kMethod = Method;
-  T* instance;
-};
 
 static constexpr std::size_t kDefaultSize = sizeof(void*) * 4;
 static constexpr std::size_t kDefaultAlignment = alignof(void*);
@@ -151,43 +136,63 @@ class SmallFunction<TRet(TArgs...), Size, Alignment> {
     }
   }
 
+  /**
+   * \brief Construction for any callable types except MethodPtr.
+   * By callable it means any type with operator() defined, like lambda or any
+   * user provided functor.
+   */
   template <typename TFunctor>
-    requires(requires {
-      { std::invocable<TFunctor, TArgs...> };
-      { std::same_as<std::invoke_result_t<TFunctor, TArgs...>, TRet> };
-      { !std::same_as<std::decay_t<TFunctor>, SmallFunction> };
-    })
-  SmallFunction(TFunctor&& functor) noexcept
+    requires(!MethodPtrType<std::decay_t<TFunctor>> &&
+             !std::same_as<std::decay_t<TFunctor>, SmallFunction> &&
+             small_function_internal::CompatibleCallable<
+                 std::decay_t<TFunctor>, TFunctor, TRet, TArgs...>)
+  SmallFunction(TFunctor&& functor) noexcept  // NOLINT(*explicit*)
       : vtable_{&small_function_internal::VTableForT<std::decay_t<TFunctor>,
                                                      TRet, TArgs...>} {
     using Type = std::decay_t<TFunctor>;
-    static_assert(sizeof(Type) <= Size, "TFunctor must fit into storage");
-
+    static_assert(sizeof(Type) <= Size,
+                  "SmallFunction target size exceeds storage size");
+    static_assert(alignof(Type) <= Alignment,
+                  "SmallFunction target alignment exceeds storage alignment");
     new (storage_.data()) Type{std::forward<TFunctor>(functor)};
   }
 
-  SmallFunction(TRet (*func_ptr)(TArgs...)) noexcept
+  /**
+   * \brief Construction for MethodPtr types.
+   * This distincts from the any callable types constructor just for future
+   * development and its own static assert message.
+   */
+  template <typename MPtr>
+    requires(MethodPtrType<std::decay_t<MPtr>> &&
+             small_function_internal::CompatibleCallable<std::decay_t<MPtr>,
+                                                         MPtr, TRet, TArgs...>)
+  SmallFunction(MPtr&& method_ptr) noexcept  // NOLINT(*explicit*)
+      : vtable_{&small_function_internal::VTableForT<std::decay_t<MPtr>, TRet,
+                                                     TArgs...>} {
+    using Type = std::decay_t<MPtr>;
+    static_assert(sizeof(Type) <= Size,
+                  "SmallFunction MethodPtr target size exceeds storage size");
+    static_assert(
+        alignof(Type) <= Alignment,
+        "SmallFunction MethodPtr target alignment exceeds storage alignment");
+    new (storage_.data()) Type{std::forward<MPtr>(method_ptr)};
+  }
+
+  /**
+   * \brief Construction for free function
+   * It accepts any function pointer type and stores it in the storage.
+   */
+  SmallFunction(TRet (*func_ptr)(TArgs...)) noexcept  // NOLINT(*explicit*)
       : vtable_{
-            &small_function_internal::VTableForFreeFunction<TRet, TArgs...>} {
+            &small_function_internal::VTableForFreeFunction<TRet (*)(TArgs...),
+                                                            TRet, TArgs...>} {
     using FuncType = decltype(func_ptr);
-    static_assert(sizeof(FuncType) <= Size, "pointer must fit into storage");
+    static_assert(sizeof(FuncType) <= Size,
+                  "SmallFunction function pointer size exceeds storage size");
+    static_assert(
+        alignof(FuncType) <= Alignment,
+        "SmallFunction function pointer alignment exceeds storage alignment");
     new (storage_.data()) FuncType{func_ptr};
-  }
-
-  template <typename T, typename... UArgs, TRet (T::*Method)(UArgs...)>
-  SmallFunction(MethodPtr<Method> func_ptr) noexcept
-      : vtable_{&small_function_internal::VTableForClassMember<T, Method, TRet,
-                                                               TArgs...>} {
-    static_assert(Size >= sizeof(T*), "pointer must fit into storage");
-    new (storage_.data()) T* {func_ptr.instance};
-  }
-
-  template <typename T, typename... UArgs, TRet (T::*Method)(UArgs...) const>
-  SmallFunction(MethodPtr<Method> func_ptr) noexcept
-      : vtable_{&small_function_internal::VTableForClassMember<T, Method, TRet,
-                                                               TArgs...>} {
-    static_assert(Size >= sizeof(T*), "pointer must fit into storage");
-    new (storage_.data()) T* {func_ptr.instance};
   }
 
   SmallFunction(SmallFunction const& other) = delete;
@@ -222,8 +227,7 @@ class SmallFunction<TRet(TArgs...), Size, Alignment> {
    */
   TRet operator()(TArgs... args) const {
     assert(vtable_ != nullptr && "SmallFunction is not initialized");
-    return vtable_->invoke(const_cast<std::uint8_t*>(storage_.data()),
-                           std::forward<TArgs>(args)...);
+    return vtable_->invoke(storage_.data(), std::forward<TArgs>(args)...);
   }
 
   explicit operator bool() const noexcept { return vtable_ != nullptr; }
@@ -238,7 +242,7 @@ class SmallFunction<TRet(TArgs...), Size, Alignment> {
   }
 
   VTable const* vtable_{};
-  Storage storage_{};
+  mutable Storage storage_{};
 };
 
 template <typename TFunction>
