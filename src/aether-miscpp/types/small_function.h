@@ -114,7 +114,7 @@ concept CompatibleCallable =
 }  // namespace small_function_internal
 
 static constexpr std::size_t kDefaultSize = sizeof(void*) * 4;
-static constexpr std::size_t kDefaultAlignment = alignof(void*);
+static constexpr std::size_t kDefaultAlignment = alignof(std::max_align_t);
 
 template <typename Signature, std::size_t Size = kDefaultSize,
           std::size_t Alignment = kDefaultAlignment>
