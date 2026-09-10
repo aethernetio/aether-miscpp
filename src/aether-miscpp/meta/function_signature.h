@@ -22,8 +22,11 @@
 #include "aether-miscpp/meta/type_list.h"
 
 namespace ae {
+template <typename Signature>
+struct FunctionSignatureTraits;
+
 template <typename Ret, typename... Args>
-struct FunctionSignatureImpl {
+struct FunctionSignatureTraits<Ret(Args...)> {
   using ret = Ret;
   using args = TypeList<Args...>;
   using signature = ret(args, ...);
@@ -31,15 +34,16 @@ struct FunctionSignatureImpl {
 };
 
 template <typename R, typename... Args>
-auto GetFunctionSignature(R (*)(Args...)) -> FunctionSignatureImpl<R, Args...>;
+auto GetFunctionSignature(R (*)(Args...))
+    -> FunctionSignatureTraits<R(Args...)>;
 
 template <typename R, typename C, typename... Args>
 auto GetFunctionSignature(R (C::*)(Args...))
-    -> FunctionSignatureImpl<R, Args...>;
+    -> FunctionSignatureTraits<R(Args...)>;
 
 template <typename R, typename C, typename... Args>
 auto GetFunctionSignature(R (C::*)(Args...) const)
-    -> FunctionSignatureImpl<R, Args...>;
+    -> FunctionSignatureTraits<R(Args...)>;
 
 template <typename Callable>
 auto GetFunctionSignature(Callable)
