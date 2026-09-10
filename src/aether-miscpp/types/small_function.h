@@ -105,9 +105,6 @@ template <typename TCallable, typename TSource, typename TRet,
  * conversion.
  */
 concept CompatibleCallable =
-    std::constructible_from<TCallable, TSource> &&
-    std::is_nothrow_constructible_v<TCallable, TSource> &&
-    std::is_nothrow_move_constructible_v<TCallable> &&
     std::invocable<TCallable&, TArgs&&...> &&
     (std::is_void_v<TRet> ||
      std::is_convertible_v<std::invoke_result_t<TCallable&, TArgs&&...>, TRet>);
@@ -154,6 +151,11 @@ class SmallFunction<TRet(TArgs...), Size, Alignment> {
                   "SmallFunction target size exceeds storage size");
     static_assert(alignof(Type) <= Alignment,
                   "SmallFunction target alignment exceeds storage alignment");
+    static_assert(std::constructible_from<Type, TFunctor> &&
+                      std::is_nothrow_constructible_v<Type, TFunctor> &&
+                      std::is_nothrow_move_constructible_v<Type>,
+                  "TFunctor must meet specific construction constraints");
+
     new (storage_.data()) Type{std::forward<TFunctor>(functor)};
   }
 
@@ -175,6 +177,12 @@ class SmallFunction<TRet(TArgs...), Size, Alignment> {
     static_assert(
         alignof(Type) <= Alignment,
         "SmallFunction MethodPtr target alignment exceeds storage alignment");
+
+    static_assert(std::constructible_from<Type, MPtr> &&
+                      std::is_nothrow_constructible_v<Type, MPtr> &&
+                      std::is_nothrow_move_constructible_v<Type>,
+                  "MPtr must meet specific construction constraints");
+
     new (storage_.data()) Type{std::forward<MPtr>(method_ptr)};
   }
 
