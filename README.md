@@ -1,32 +1,47 @@
-# Aether miscpp library
+# Æthernet C++ Utilities
 
-Collection of miscelnaus utils widely used in most aether c++ libraries.
+Header-only C++20 utilities shared by Æthernet C++ projects. This is an internal building block published separately for reuse and testing; it is not an Æthernet network client.
 
-## Usage
-
-Use [CPM](https://github.com/cpm-cmake/CPM.cmake) to integrate it with your project:
+## Add with CPM.cmake
 
 ```cmake
 include(cmake/CPM.cmake)
 
-CPMAddPackage("gh:aethernetio/aether-miscpp#main")
-...
+CPMAddPackage(
+  NAME aether-miscpp
+  GITHUB_REPOSITORY aethernetio/aether-miscpp
+  GIT_TAG main
+)
 
-target_link_library(${target_name} PRIVATE aether::miscpp)
+target_link_libraries(your_target PRIVATE aether::miscpp)
 ```
+
+For reproducible builds, pin `GIT_TAG` to a reviewed commit SHA.
+
+## Requirements
+
+- CMake 3.16 or newer;
+- a C++20 compiler.
 
 ## Build and test
 
-Configure, build and test Cmake project as usual:
+```bash
+git clone https://github.com/aethernetio/aether-miscpp.git
+cd aether-miscpp
 
-```sh
-mkdir build
-cd build
-cmake ..
-cmake --build .
-ctest .
+cmake -S . -B build -DAE_BUILD_TESTS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
-./CMakeLists.txt automatically detects if this project build on its own or as part of another project.
-In the first case it also automatically enable tests and installation.
-In the second case you are free to enable it by options `AE_BUILD_TESTS` and `AE_INSTALL`.
+When built as the root project, tests and installation are enabled by default. When included by another CMake project, use `AE_BUILD_TESTS` and `AE_INSTALL` to control them.
+
+## CMake target
+
+```cmake
+aether::miscpp
+```
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
